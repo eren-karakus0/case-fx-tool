@@ -13,6 +13,7 @@ something a schema can say.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+import json
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date
@@ -48,6 +49,37 @@ CONVERT_PATH = "/tools/convert"
 #: Three letters, either case. The semantic check, "is this a currency the ECB
 #: prices", needs the feed and happens later.
 CURRENCY_PATTERN = r"^[A-Za-z]{3}$"
+
+
+class ExactJSONResponse(JSONResponse):
+    """A JSON response that writes Decimals as the numbers they are.
+
+    The obvious alternative, converting to float on the way out, silently stops
+    being exact past about fifteen significant digits: an amount echoed back as
+    123456789.12345679 rather than the 123456789.1234567891 that was sent, and a
+    large result rendered 2.0566109999999796e+16 rather than
+    20566109999999794.34. Both are the defect this service exists to avoid, one
+    step further down the pipe, and the second is not even a number a caller can
+    read aloud to a customer.
+
+    JSON numbers carry arbitrary precision; only parsers narrow them. Writing the
+    digits out means this service is never the thing that loses them.
+    """
+
+    def render(self, content: object) -> bytes:
+        if not isinstance(content, dict):
+            return super().render(content)
+
+        fields = (
+            f"{json.dumps(key)}:{_number(value) if isinstance(value, Decimal) else json.dumps(value)}"
+            for key, value in content.items()
+        )
+        return ("{" + ",".join(fields) + "}").encode("utf-8")
+
+
+def _number(value: Decimal) -> str:
+    """A Decimal as JSON number text, never in exponential form."""
+    return format(value, "f")
 
 
 @dataclass(frozen=True)
@@ -180,7 +212,7 @@ async def convert(
     quote = await runtime.upstream.quote(question)
     ensure_publishable(asked_on, quote.published_on, runtime.settings.max_fallback_days)
 
-    return JSONResponse(
+    return ExactJSONResponse(
         _success_body(amount=amount, question=question, quote=quote, asked_on=asked_on)
     )
 
@@ -195,11 +227,11 @@ def _success_body(
     avoid.
     """
     body: dict[str, object] = {
-        "amount": _as_json_number(amount),
+        "amount": amount,
         "from": question.base,
         "to": question.target,
-        "rate": _as_json_number(quote.rate),
-        "result": _as_json_number(convert_amount(amount, quote.rate)),
+        "rate": quote.rate,
+        "result": convert_amount(amount, quote.rate),
         "rate_date": quote.published_on.isoformat(),
         "asked_date": asked_on.isoformat(),
         "source": SOURCE_LABEL,
@@ -214,7 +246,7 @@ def _success_body(
 
 @app.exception_handler(FxError)
 async def handle_fx_error(request: Request, exc: FxError) -> JSONResponse:
-    return JSONResponse(exc.body, status_code=exc.status)
+    return ExactJSONResponse(exc.body, status_code=exc.status)
 
 
 @app.exception_handler(RequestValidationError)
@@ -227,7 +259,7 @@ async def handle_validation_error(
     find out what went wrong.
     """
     error = translate_validation_error(exc.errors())
-    return JSONResponse(error.body, status_code=error.status)
+    return ExactJSONResponse(error.body, status_code=error.status)
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -235,7 +267,7 @@ async def handle_http_exception(
     request: Request, exc: StarletteHTTPException
 ) -> JSONResponse:
     """Keep the contract total: a mistyped path or method leaves in it too."""
-    return JSONResponse(
+    return ExactJSONResponse(
         {
             "error": UNSUPPORTED_REQUEST.code,
             "message": (
@@ -254,7 +286,7 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
     Nothing is echoed back from the exception: the caller is downstream of a
     customer conversation, and an internal message is not something to relay.
     """
-    return JSONResponse(
+    return ExactJSONResponse(
         {
             "error": INTERNAL_ERROR.code,
             "message": (
@@ -264,14 +296,3 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
         },
         status_code=INTERNAL_ERROR.status,
     )
-
-
-def _as_json_number(value: Decimal) -> int | float:
-    """Render a Decimal as a JSON number.
-
-    An integral value is written without a fractional part, which is how the
-    documented response shows an amount of 250. What reaches here is a rate with
-    at most six decimal places and a result already quantised to the cent, both
-    of which round-trip through a binary float to the same text.
-    """
-    return int(value) if value == value.to_integral_value() else float(value)

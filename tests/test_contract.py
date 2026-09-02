@@ -129,3 +129,68 @@ def test_the_pair_is_asked_of_the_feed_in_the_direction_it_was_given(client, fee
     request = feed.rate_requests[-1]
     assert request.url.params["base"] == "TRY"
     assert request.url.params["symbols"] == "EUR"
+
+
+# --- how the numbers reach the wire ------------------------------------------
+#
+# These read response.text rather than response.json(). Parsing would hide the
+# defect they exist for: the parser turns the number back into a binary float, so
+# both sides of the comparison lose exactly the same digits and agree on a value
+# the service never meant.
+
+
+def test_the_documented_numbers_are_written_exactly_as_documented(ask, feed):
+    feed.publishes("2026-08-28", on="2026-08-28", rates={"TRY": "47.1234"})
+
+    text = ask(amount=250, on="2026-08-28").text
+
+    assert '"amount":250' in text
+    assert '"rate":47.1234' in text
+    assert '"result":11780.85' in text
+
+
+def test_the_amount_is_echoed_with_every_digit_the_caller_sent(ask, feed):
+    # Through a binary float this comes back as 123456789.12345679, which is not
+    # the number anyone sent.
+    feed.publishes("2026-08-28", on="2026-08-28", rates={"TRY": "47.1234"})
+
+    text = ask(amount="123456789.1234567891", on="2026-08-28").text
+
+    assert '"amount":123456789.1234567891' in text
+
+
+def test_a_large_result_keeps_its_cents(ask, feed):
+    # The largest amount this service accepts, at the largest rate the ECB
+    # publishes. Through a binary float the answer becomes
+    # 2.0566109999999796e+16: wrong to the cent, and past the point where a
+    # float can represent whole numbers at all.
+    feed.publishes("2026-08-28", on="2026-08-28", rates={"IDR": "20566.11"})
+
+    text = ask(amount="999999999999.99", to="IDR", on="2026-08-28").text
+
+    assert '"result":20566109999999794.34' in text
+
+
+def test_no_number_is_ever_written_in_exponential_form(ask, feed):
+    # A model reads this body as text and repeats it to a customer. "2.05e+16"
+    # is not a sum of money anyone can act on.
+    feed.publishes("2026-08-28", on="2026-08-28", rates={"IDR": "20566.11"})
+
+    text = ask(amount="999999999999.99", to="IDR", on="2026-08-28").text
+
+    assert "e+" not in text and "E+" not in text
+
+
+def test_the_rate_is_written_with_the_digits_the_publisher_used(ask, feed):
+    feed.publishes("2026-08-28", on="2026-08-28", rates={"USD": "0.020730"})
+
+    text = ask(amount=1, to="USD", on="2026-08-28").text
+
+    assert '"rate":0.020730' in text
+
+
+def test_an_error_body_is_still_ordinary_json(ask):
+    response = ask(amount=0)
+
+    assert response.headers["content-type"].startswith("application/json")
+    assert set(response.json()) == {"error", "message"}
