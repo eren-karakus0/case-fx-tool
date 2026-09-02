@@ -11,9 +11,11 @@ returning a number.
 ## Run
 
 ```sh
-pip install -r requirements.txt
+pip install -r requirements.txt          # or into a venv: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ./run.sh
 ```
+
+`run.sh` and `test.sh` use `.venv` when one exists and `python3` otherwise.
 
 ```sh
 curl 'http://localhost:8080/tools/convert?amount=250&from=EUR&to=TRY&date=2026-08-28'
@@ -43,7 +45,11 @@ renders it.
 
 No test opens a socket. Every upstream response is served by an in-process
 `httpx.MockTransport`, so this passes with `FX_UPSTREAM_BASE` pointing at a closed
-port, at an unresolvable host, or with the machine offline.
+port, at an unresolvable host, or with the machine offline. All three were run.
+
+The single warning in the output is starlette telling its own test client to move
+to httpx2. It comes from the test framework, not from this service, and nothing
+here depends on the resolution.
 
 ## Configuration
 
