@@ -62,25 +62,38 @@ class RateQuestion:
         target: the currency being converted into.
         on: the date asked about, or None when the caller named no date and
             wants the most recent publication.
-        settled: whether the day asked about is already behind us. A settled day
-            can never receive a new rate, so its answer is held far longer.
+        today: the current date on the publisher's calendar, which is what makes
+            the difference between a day that is over and one that is not.
     """
 
     base: str
     target: str
     on: date | None
-    settled: bool
+    today: date
+
+    @property
+    def settled(self) -> bool:
+        """Whether the day asked about is already behind us.
+
+        A settled day can never receive a new rate, which decides both how the
+        feed is asked and how long its answer is held. Derived rather than
+        passed in: as a field it could be set to True with no date, a state
+        nothing here could answer and nothing outside was obliged to avoid.
+        """
+        return self.on is not None and self.on < self.today
 
     @property
     def path(self) -> str:
         """Which of the feed's paths answers this question.
 
-        A day that is not settled yet is asked for as "latest", whether or not
-        the caller named it. Asking the feed for today and asking it for its most
-        recent publication are the same question with the same answer, and
-        treating them as one keeps a repeat from reaching the feed twice.
+        A day that is not settled is asked for as "latest", whether or not the
+        caller named it. Asking the feed for today and asking for its most recent
+        publication are the same question with the same answer, and treating them
+        as one keeps a repeat from reaching the feed twice.
         """
-        return LATEST if not self.settled else self.on.isoformat()
+        if self.on is None or self.on >= self.today:
+            return LATEST
+        return self.on.isoformat()
 
     @property
     def cache_key(self) -> tuple[str, str, str]:

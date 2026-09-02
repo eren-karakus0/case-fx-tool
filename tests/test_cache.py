@@ -18,6 +18,7 @@ def quote(rate: str = "56.1718", on: str = "2026-08-28") -> Quote:
     return Quote(rate=Decimal(rate), published_on=date.fromisoformat(on))
 
 
+TODAY = date(2026, 9, 2)
 KEY = ("EUR", "TRY", "2026-08-28")
 OTHER_KEY = ("EUR", "TRY", "latest")
 
@@ -26,33 +27,54 @@ OTHER_KEY = ("EUR", "TRY", "latest")
 
 
 def test_no_date_asks_the_feed_for_its_latest_publication():
-    question = RateQuestion(base="EUR", target="TRY", on=None, settled=False)
+    question = RateQuestion(base="EUR", target="TRY", on=None, today=TODAY)
     assert question.path == "latest"
 
 
 def test_a_named_date_becomes_the_path():
-    question = RateQuestion(
-        base="EUR", target="TRY", on=date(2026, 8, 28), settled=True
-    )
+    question = RateQuestion(base="EUR", target="TRY", on=date(2026, 8, 28), today=TODAY)
     assert question.path == "2026-08-28"
 
 
 def test_the_same_pair_on_two_dates_is_two_different_questions():
-    march_2020 = RateQuestion("EUR", "TRY", date(2020, 3, 16), settled=True)
-    latest = RateQuestion("EUR", "TRY", None, settled=False)
+    march_2020 = RateQuestion("EUR", "TRY", date(2020, 3, 16), TODAY)
+    latest = RateQuestion("EUR", "TRY", None, TODAY)
     assert march_2020.cache_key != latest.cache_key
 
 
 def test_two_pairs_on_the_same_date_are_two_different_questions():
-    to_try = RateQuestion("EUR", "TRY", date(2026, 8, 28), settled=True)
-    to_usd = RateQuestion("EUR", "USD", date(2026, 8, 28), settled=True)
+    to_try = RateQuestion("EUR", "TRY", date(2026, 8, 28), TODAY)
+    to_usd = RateQuestion("EUR", "USD", date(2026, 8, 28), TODAY)
     assert to_try.cache_key != to_usd.cache_key
 
 
 def test_the_direction_of_the_pair_is_part_of_the_question():
-    forward = RateQuestion("EUR", "TRY", None, settled=False)
-    reverse = RateQuestion("TRY", "EUR", None, settled=False)
+    forward = RateQuestion("EUR", "TRY", None, TODAY)
+    reverse = RateQuestion("TRY", "EUR", None, TODAY)
     assert forward.cache_key != reverse.cache_key
+
+
+def test_a_day_that_is_over_is_settled_and_asked_for_by_date():
+    question = RateQuestion("EUR", "TRY", date(2026, 8, 28), TODAY)
+
+    assert question.settled is True
+    assert question.path == "2026-08-28"
+
+
+def test_today_and_no_date_are_both_unsettled_and_both_ask_for_the_latest():
+    named = RateQuestion("EUR", "TRY", TODAY, TODAY)
+    unnamed = RateQuestion("EUR", "TRY", None, TODAY)
+
+    assert (named.settled, unnamed.settled) == (False, False)
+    assert named.path == unnamed.path == "latest"
+    assert named.cache_key == unnamed.cache_key
+
+
+def test_settled_cannot_be_claimed_without_a_date():
+    # It is derived from the dates the question holds rather than passed in, so
+    # the combination that would have to be avoided by convention elsewhere
+    # cannot be built at all.
+    assert RateQuestion("EUR", "TRY", None, TODAY).settled is False
 
 
 # --- storing and expiring ----------------------------------------------------

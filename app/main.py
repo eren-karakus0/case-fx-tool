@@ -205,9 +205,7 @@ async def convert(
     ensure_distinct(base, target)
 
     asked_on = resolve_asked_date(on, runtime.today)
-    question = RateQuestion(
-        base=base, target=target, on=on, settled=asked_on < runtime.today
-    )
+    question = RateQuestion(base=base, target=target, on=on, today=runtime.today)
 
     quote = await runtime.upstream.quote(question)
     ensure_publishable(asked_on, quote.published_on, runtime.settings.max_fallback_days)
