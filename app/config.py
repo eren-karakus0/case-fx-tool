@@ -54,7 +54,11 @@ class Settings:
     connect_timeout: float = 5.0
 
     #: Per read rather than for the whole body, which suits a feed whose answers
-    #: arrive in one packet.
+    #: arrive in one packet. Measured: 0.12s once the CDN is warm, 1.4s on a cold
+    #: cache miss. Four seconds is roughly three times the worst normal case, and
+    #: the abnormal case is not one to wait out: during one verification run the
+    #: feed answered a dated path with HTTP 522 after 19.8s and another after
+    #: 35.8s, neither of which anyone should hold a customer for.
     read_timeout: float = 4.0
 
     #: The newest rate changes when the ECB publishes, around 16:00 CET; a rate

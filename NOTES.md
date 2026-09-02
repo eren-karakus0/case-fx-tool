@@ -49,6 +49,13 @@ and TLS all to that phase, and five cold attempts at the feed took 1.32s, 0.76s,
 process answered 503 against a healthy feed. I saw it only by running the service
 on Ubuntu rather than on the machine it was written on.
 
+Running it there also settled the other budget by accident. Mid-verification the
+feed had a bad few minutes, answering one dated path with HTTP 522 after 19.8s and
+another after 35.8s. The service returned `upstream_timeout` in four seconds
+instead, which is the behaviour the read budget exists for: a model waiting on a
+customer conversation cannot hold for half a minute, and no rate is the honest
+answer when the source has stopped answering.
+
 ## With another day
 
 - **Single-flight.** Ten identical questions arriving together are ten upstream
