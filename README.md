@@ -16,6 +16,8 @@ pip install -r requirements.txt          # or into a venv: python3 -m venv .venv
 ```
 
 `run.sh` and `test.sh` use `.venv` when one exists and `python3` otherwise.
+Python 3.10 or newer: built on 3.13.5, and the suite and a live call were both
+run again on 3.10.4 from a clean install of `requirements.txt`.
 
 ```sh
 curl 'http://localhost:8080/tools/convert?amount=250&from=EUR&to=TRY&date=2026-08-28'
