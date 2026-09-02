@@ -6,10 +6,14 @@ worse than no number, and every case here is a chance to break it.
 
 from __future__ import annotations
 
+from datetime import date
+
 import httpx
 import pytest
 
-from app.main import CONVERT_PATH
+from app.config import load_settings
+from app.main import CONVERT_PATH, Runtime, app, get_runtime
+from tests.support import FAKE_BASE
 
 
 def test_a_feed_that_answers_with_a_server_error_is_a_bad_gateway(ask, feed):
@@ -136,6 +140,49 @@ def test_a_missing_currency_list_falls_back_to_the_vaguer_answer(ask, feed):
 
     assert response.status_code == 404
     assert response.json()["error"] == "rate_unavailable"
+
+
+# --- the fault nobody planned for --------------------------------------------
+
+
+class ExplodingUpstream:
+    """Stands in for a bug this service does not know it has."""
+
+    async def quote(self, question):
+        raise RuntimeError("an internal detail nobody outside should ever read")
+
+
+def test_an_unforeseen_fault_still_leaves_in_the_contract(client):
+    app.dependency_overrides[get_runtime] = lambda: Runtime(
+        upstream=ExplodingUpstream(),
+        settings=load_settings({"FX_UPSTREAM_BASE": FAKE_BASE}),
+        today=date(2026, 9, 2),
+    )
+
+    response = client.get(
+        CONVERT_PATH, params={"amount": 250, "from": "EUR", "to": "TRY"}
+    )
+
+    assert response.status_code == 500
+    assert set(response.json()) == {"error", "message"}
+    assert response.json()["error"] == "internal_error"
+
+
+def test_an_unforeseen_fault_does_not_leak_its_own_message(client):
+    # The caller is downstream of a customer conversation. An internal string is
+    # not something to hand a model to relay.
+    app.dependency_overrides[get_runtime] = lambda: Runtime(
+        upstream=ExplodingUpstream(),
+        settings=load_settings({"FX_UPSTREAM_BASE": FAKE_BASE}),
+        today=date(2026, 9, 2),
+    )
+
+    message = client.get(
+        CONVERT_PATH, params={"amount": 250, "from": "EUR", "to": "TRY"}
+    ).json()["message"]
+
+    assert "nobody outside should ever read" not in message
+    assert "RuntimeError" not in message
 
 
 # --- paths and methods this service does not serve ---------------------------
