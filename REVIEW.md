@@ -1,9 +1,9 @@
 # Review of tool.py
 
-Each finding is the running service's answer next to what the upstream said to the
+Each finding is the running service's answer beside what the upstream said to the
 same question at the same moment. `tool.py` is untouched; the one case needing a
-stand-in was done by repointing `tool.UPSTREAM` from a Python session. Ranked by
-what reaches a customer: how often it fires, how invisible it is, how far wrong.
+stand-in repointed `tool.UPSTREAM` from a Python session. Ranked by what reaches a
+customer: how often it fires, how invisible it is, how far wrong.
 
 ## 1. The cache answers a question it was never asked
 
@@ -18,9 +18,9 @@ upstream /v1/latest EUR->USD    -> date 2026-09-01, 1.159
 ```
 
 **To a customer:** one person asks about March 2020 and everyone after them is
-quoted that rate as today's. A 10,000 EUR invoice comes back as 11,200 USD instead
-of 11,590; on EUR/TRY the same poisoning is a factor of eight. Plausible, well
-formed, and wrong until the process restarts.
+quoted that rate as today's, until the process restarts. A 10,000 EUR invoice
+comes back as 11,200 USD instead of 11,590; on EUR/TRY the same poisoning is a
+factor of eight. Plausible, well formed, untrue.
 
 ## 2. The date on the answer is manufactured from the question
 
@@ -35,17 +35,17 @@ on=2030-01-01 -> 7.47, dated 2030-01-01 | upstream: 404 not found
 ```
 
 **To a customer:** Friday's rate presented as Sunday's, and that is the field an
-invoice is checked against later. Then a rate for a day that has not happened, the
-upstream answering near-future dates with 200 so nothing fails loudly. Then a rate
-for 2030 that the upstream refused to give: invented out of nothing.
+invoice is checked against later. Then a rate for a day that has not happened,
+because the upstream answers near-future dates with 200 and nothing fails loudly.
+Then a rate for 2030 the upstream refused to give: invented out of nothing.
 
 The comment above the fallback explains it as "the ECB publishes nothing on
 weekends". The ECB does not, but the *upstream* does, answering Sunday with 200
-and Friday's date, so that branch never runs for the reason it gives. What
-triggers it is a 404 body with no `rates` key, meaning an unknown currency or a
-date outside the series, and re-asking `/latest` is wrong for both. That comment
-is why findings 1 to 3 look reasonable: the author's model of the upstream was
-wrong and everything downstream inherited it.
+and Friday's date, so that branch never runs for the reason it gives. It fires on
+a 404 body with no `rates` key, an unknown currency or a date outside the series,
+and re-asking `/latest` is wrong for both. That comment is why findings 1 to 3
+look reasonable: the author's model of the upstream was wrong and everything
+downstream inherited it.
 
 ## 3. The documented call is not the call the code implements
 
@@ -67,7 +67,7 @@ sixteen percent over, from a call copied out of the documentation.
 told their 250 EUR is worth nothing and the caller cannot tell. Seen with an
 unknown currency (`conversion failed: 'rates'`) and a stand-in serving HTML
 (`Expecting value: line 1 column 1`). Below the three above only because a zero is
-absurd enough that something downstream may balk.
+absurd enough that something downstream may balk at it.
 
 **`round(rate, 2)` destroys small rates.** TRY/USD at 0.02071 becomes 0.02, so a
 million lira is quoted as 20,000.00 USD instead of 20,710.00. Rounding the
@@ -80,11 +80,11 @@ a second error shape the caller has to know.
 ## The one I would fix before shipping tonight
 
 **The cache key.** One line, and it stops the largest, most frequent and least
-visible wrong number here. It is the only defect that worsens with uptime and the
-only one with no tell: findings 2 and 3 leave a wrong date or currency in the
-response for a careful reader to catch, while a poisoned cache returns a
-well-formed answer that is simply untrue. Given a second line, I would delete the
-`except Exception` that returns zeros.
+visible wrong number here. It is also the only defect that worsens with uptime and
+the only one with no tell: findings 2 and 3 leave a wrong date or currency in the
+response for a careful reader, while a poisoned cache returns a well-formed answer
+that is simply untrue. Given a second line, I would delete the `except Exception`
+that returns zeros.
 
 ## Things that look suspicious but are fine
 
