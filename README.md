@@ -91,7 +91,7 @@ is absent when the rate belongs to the day asked about.
 | Three letters the ECB does not price, such as `XAU` | Refused, and told which codes do exist | `400 unknown_currency` |
 | `from` and `to` are the same | Refused, and told that the conversion is 1:1 | `400 same_currency` |
 | The feed is slow | Refused after the read budget, 4s | `504 upstream_timeout` |
-| The feed cannot be reached | Refused after the connect budget, 2s | `503 upstream_unavailable` |
+| The feed cannot be reached | Refused at once if the connection is refused, otherwise after the connect budget of 5s | `503 upstream_unavailable` |
 | The feed returns 500 | Refused | `502 upstream_error` |
 | The feed returns something that is not JSON, or JSON without the rate asked for, or a rate of zero | Refused | `502 upstream_bad_response` |
 | `amount` is missing | Refused | `400 missing_parameter` |

@@ -74,18 +74,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     is expected to have an answer for.
     """
     settings = load_settings()
-    timeout = httpx.Timeout(
-        connect=settings.connect_timeout,
-        read=settings.read_timeout,
-        write=settings.read_timeout,
-        pool=settings.connect_timeout,
-    )
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=client_timeout(settings)) as client:
         app.state.settings = settings
         app.state.upstream = Upstream(
             settings, client, RateCache(settings.cache_max_entries)
         )
         yield
+
+
+def client_timeout(settings: Settings) -> httpx.Timeout:
+    """The budget one upstream call is given, phase by phase.
+
+    Named rather than inlined so that the wiring can be tested: a budget that
+    silently stopped reaching the client would show up only as an outage under
+    load, which is the worst place to find it.
+    """
+    return httpx.Timeout(
+        connect=settings.connect_timeout,
+        read=settings.read_timeout,
+        write=settings.read_timeout,
+        pool=settings.connect_timeout,
+    )
 
 
 app = FastAPI(

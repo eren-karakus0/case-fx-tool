@@ -65,12 +65,21 @@ never rounded, only the result. Python's `round()` rounds half to even, which tu
 and any second endpoint, including the `/health` that `tool.py` has. The brief says
 they are not scored, and each one is another surface to keep correct.
 
-**What running it changed.** A closed port does not always refuse a connection; on
-some platforms it times out on the connect. The first version reported that as
-`upstream_timeout`, "did not answer in time", but nothing had been established to be
-slow. A connect timeout now reports the source as unreachable. Measured on real
-sockets: 2.0s to give up connecting, 4.0s to give up waiting, which are the budgets
-this service sets rather than the HTTP library's 5s default.
+**What running it changed, twice.** A closed port does not always refuse a
+connection; on some platforms it times out on the connect. The first version
+reported that as `upstream_timeout`, "did not answer in time", but nothing had been
+established to be slow. A connect timeout now reports the source as unreachable.
+
+The second correction cost the service a real defect. The connect budget started at
+two seconds, which sounded prudent and was wrong: httpx charges DNS, the TCP
+handshake and the TLS handshake all to that phase, and on a cold process five
+attempts at the real feed took 1.32s, 0.76s, 2.66s, 0.42s and 3.03s to get that
+far. Two of five over budget, so the first call of a freshly started process
+answered `503 upstream_unavailable` against a feed that was perfectly healthy. I
+only saw it because I ran the service on Ubuntu rather than on the machine it was
+written on. The budget is five seconds now, which costs nothing after the first
+call because the connection is pooled, and the numbers above are in the comment
+next to it so the next person does not have to rediscover them.
 
 ## With another day
 

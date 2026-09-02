@@ -6,11 +6,13 @@ means nothing else would notice if the real startup path were broken.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import MAX_AMOUNT
-from app.main import app
+from app.config import MAX_AMOUNT, load_settings
+from app.main import app, client_timeout
 from app.upstream import Upstream
 
 CLOSED_PORT = "http://127.0.0.1:1"
@@ -30,6 +32,23 @@ def test_startup_refuses_a_base_url_that_could_never_work(monkeypatch):
 
     with pytest.raises(ValueError), TestClient(app):
         pass
+
+
+def test_the_configured_budgets_reach_the_http_client():
+    # Left to the library these would all be five seconds. The point of setting
+    # them is that connect and read answer different questions, so the test
+    # checks that both travel rather than that either equals a particular number.
+    settings = replace(
+        load_settings({"FX_UPSTREAM_BASE": CLOSED_PORT}),
+        connect_timeout=1.5,
+        read_timeout=2.5,
+    )
+
+    timeout = client_timeout(settings)
+
+    assert timeout.connect == 1.5
+    assert timeout.read == 2.5
+    assert timeout.pool == 1.5
 
 
 def test_the_published_schema_names_the_parameters_the_brief_documents():

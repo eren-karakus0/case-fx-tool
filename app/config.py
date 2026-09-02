@@ -51,10 +51,18 @@ class Settings:
 
     upstream_base: str
 
-    #: Split so a dead host fails fast while a slow but live one is given room.
-    #: The read budget applies per read rather than to the whole body, which is
-    #: fine for a feed whose answers arrive in one packet.
-    connect_timeout: float = 2.0
+    #: The connect budget covers DNS, the TCP handshake and the TLS handshake
+    #: together, which is what httpx charges to it. Measured on a cold process:
+    #: two of five attempts to reach the real feed took over two seconds to get
+    #: that far, and one took three, so a two second budget turns a healthy feed
+    #: into an outage on the first call of a process. Five clears the worst
+    #: observed with room, and costs nothing afterwards because the connection
+    #: is pooled and later calls skip this phase entirely.
+    connect_timeout: float = 5.0
+
+    #: Applies per read rather than to the whole body, which is fine for a feed
+    #: whose answers arrive in one packet. After the handshake the real feed has
+    #: never taken as much as a second to answer.
     read_timeout: float = 4.0
 
     #: The newest rate changes when the ECB publishes, around 16:00 CET. A rate
