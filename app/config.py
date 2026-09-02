@@ -25,6 +25,13 @@ DEFAULT_UPSTREAM_BASE = "https://api.frankfurter.dev"
 #: carries no version, so the client appends this one.
 UPSTREAM_API_VERSION = "v1"
 
+#: The provenance label the brief fixes for successful answers. It names the
+#: publisher of the rates, not the host requests are sent to, so it stays correct
+#: when FX_UPSTREAM_BASE points at a stand-in. Deriving it from the base URL was
+#: considered and rejected: the contract fixes this string, and a caller reading
+#: "ECB via 127.0.0.1" would learn nothing useful.
+SOURCE_LABEL = "ECB via frankfurter.dev"
+
 _ALLOWED_SCHEMES = ("http", "https")
 
 
