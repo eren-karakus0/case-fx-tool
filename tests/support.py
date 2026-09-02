@@ -7,7 +7,7 @@ FX_UPSTREAM_BASE pointing at a closed port, or with the machine offline.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import httpx
 

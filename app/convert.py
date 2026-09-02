@@ -14,7 +14,7 @@ tested without a server or a socket.
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
 from app.errors import (

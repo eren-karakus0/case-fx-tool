@@ -10,9 +10,9 @@ in the package may assume otherwise.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Mapping
 from urllib.parse import urlparse
 
 #: Used when FX_UPSTREAM_BASE is unset. The only occurrence of the real host.

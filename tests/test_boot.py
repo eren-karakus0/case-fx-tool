@@ -28,9 +28,8 @@ def test_the_application_builds_its_client_and_cache_at_startup(monkeypatch):
 def test_startup_refuses_a_base_url_that_could_never_work(monkeypatch):
     monkeypatch.setenv("FX_UPSTREAM_BASE", "not-a-url")
 
-    with pytest.raises(ValueError):
-        with TestClient(app):
-            pass
+    with pytest.raises(ValueError), TestClient(app):
+        pass
 
 
 def test_the_published_schema_names_the_parameters_the_brief_documents():

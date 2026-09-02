@@ -88,7 +88,7 @@ def test_a_feed_that_does_not_answer_in_time_is_reported_as_a_timeout(ask, feed)
 # --- the 404 that means two different things ---------------------------------
 
 
-def test_a_currency_the_publisher_does_not_price_is_the_callers_mistake(ask, feed):
+def test_a_currency_the_publisher_does_not_price_is_the_callers_mistake(ask):
     # The feed answers this with the same 404 as a date it has no data for, so
     # the currency list is what tells them apart.
     response = ask(amount=1, to="XAU")
@@ -97,22 +97,20 @@ def test_a_currency_the_publisher_does_not_price_is_the_callers_mistake(ask, fee
     assert response.json()["error"] == "unknown_currency"
 
 
-def test_an_unknown_currency_is_told_which_codes_do_exist(ask, feed):
+def test_an_unknown_currency_is_told_which_codes_do_exist(ask):
     message = ask(amount=1, to="XAU").json()["message"]
 
     assert "XAU" in message
     assert "TRY" in message and "USD" in message
 
 
-def test_both_unknown_codes_are_named_at_once(ask, feed):
+def test_both_unknown_codes_are_named_at_once(ask):
     message = ask(amount=1, source="XAU", to="XAG").json()["message"]
 
     assert "XAU and XAG" in message
 
 
-def test_a_known_pair_with_no_history_that_far_back_is_not_the_callers_mistake(
-    ask, feed
-):
+def test_a_known_pair_with_no_history_that_far_back_is_not_the_callers_mistake(ask):
     # EUR/BRL is a real pair, but the series does not reach 1999. Calling that
     # an unknown currency would send the caller looking for a typo.
     response = ask(amount=1, to="BRL", on="1999-01-04")

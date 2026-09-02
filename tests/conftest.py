@@ -6,8 +6,8 @@ test names only what it actually cares about.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import date
-from typing import Iterator
 
 import httpx
 import pytest
@@ -21,7 +21,6 @@ from tests.support import FAKE_BASE, Clock, FakeFeed
 #: A Wednesday. The Saturday and Sunday before it are 2026-08-29 and 2026-08-30,
 #: and the ECB's last publication before them was Friday 2026-08-28.
 TODAY = date(2026, 9, 2)
-LAST_PUBLICATION = date(2026, 8, 28)
 
 
 @pytest.fixture

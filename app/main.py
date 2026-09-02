@@ -12,11 +12,12 @@ something a schema can say.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, AsyncIterator
+from typing import Annotated
 
 import httpx
 from fastapi import Depends, FastAPI, Query, Request
