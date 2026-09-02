@@ -1,0 +1,12 @@
+# Runtime
+fastapi==0.135.1
+uvicorn==0.34.0
+httpx==0.28.1
+
+# zoneinfo has no time zone database on Windows, and the service needs
+# Europe/Berlin to decide what "today" means on the ECB's calendar.
+tzdata==2025.1
+
+# Tests. Kept in the same file so that one install is enough to run both
+# ./run.sh and ./test.sh.
+pytest==8.4.1

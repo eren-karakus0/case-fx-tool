@@ -1,0 +1,8 @@
+# The shell entry points are executed on Linux by the reviewer. A CRLF here makes
+# the shebang line unusable, and this repository is developed on Windows where
+# core.autocrlf would otherwise rewrite them on checkout.
+*.sh text eol=lf
+
+# Everything else is normalised to LF in the repository and left to the platform
+# in the working tree.
+* text=auto
