@@ -112,8 +112,12 @@ near-future dates, are both things no amount of reading would have produced.
 
 The second is verification. `./test.sh` passing is not evidence that the service
 works, so I ran it and used it: against the live feed, against a stand-in that
-answers HTML, against one that never answers, and against a closed port. The
-connect-timeout correction above came out of that and out of nothing else.
+answers HTML, against one that never answers, and against a closed port. Then on
+the platform it will actually be read on rather than the one it was written on, by
+cloning it fresh into Ubuntu 22.04 and 24.04, installing from `requirements.txt`
+and calling it there. Both corrections above came out of that and out of nothing
+else; the second one, a healthy feed answering 503, is invisible to a test suite
+and was invisible on the machine I wrote it on.
 
 ## One thing the AI got wrong
 
