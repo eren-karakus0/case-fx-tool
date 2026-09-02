@@ -73,7 +73,14 @@ class RateQuestion:
 
     @property
     def path(self) -> str:
-        return LATEST if self.on is None else self.on.isoformat()
+        """Which of the feed's paths answers this question.
+
+        A day that is not settled yet is asked for as "latest", whether or not
+        the caller named it. Asking the feed for today and asking it for its most
+        recent publication are the same question with the same answer, and
+        treating them as one keeps a repeat from reaching the feed twice.
+        """
+        return LATEST if not self.settled else self.on.isoformat()
 
     @property
     def cache_key(self) -> tuple[str, str, str]:

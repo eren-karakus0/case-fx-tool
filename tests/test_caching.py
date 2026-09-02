@@ -19,6 +19,19 @@ def test_the_same_question_twice_reaches_the_feed_once(ask, feed):
     assert first.json() == second.json()
 
 
+def test_asking_for_today_and_asking_for_the_latest_are_one_question(ask, feed):
+    # Same answer, so it must cost one request rather than two. Keyed on the
+    # literal date these would be two entries for one day's data.
+    feed.publishes("latest", on="2026-09-01", rates={"TRY": "55.9498"})
+
+    without_a_date = ask(amount=1).json()
+    naming_today = ask(amount=1, on="2026-09-02").json()
+
+    assert without_a_date == naming_today
+    assert feed.calls_to("latest") == 1
+    assert feed.calls_to("2026-09-02") == 0
+
+
 def test_a_different_amount_is_the_same_question_about_the_rate(ask, feed):
     feed.publishes("2026-08-28", on="2026-08-28", rates={"TRY": "56.1718"})
 

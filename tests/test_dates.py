@@ -91,7 +91,9 @@ def test_the_first_day_of_the_series_is_a_normal_question(ask, feed):
 
 
 def test_today_is_not_the_future(ask, feed):
-    feed.publishes("2026-09-02", on="2026-09-02", rates={"TRY": "56.0"})
+    # Today is asked of the feed as "latest", because a day that is not over
+    # cannot have a rate of its own yet that "latest" would not already give.
+    feed.publishes("latest", on="2026-09-02", rates={"TRY": "56.0"})
 
     assert ask(amount=1, on="2026-09-02").status_code == 200
 
