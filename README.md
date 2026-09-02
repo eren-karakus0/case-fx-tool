@@ -1,129 +1,143 @@
-# Case study — Junior Software Engineer at mangolab
+# fx-tool
 
-Two small tasks, **about two and a half hours in total.** Please do not spend
-your weekend on this. If you run out of time, stop and write down what you would
-have done next — that answer counts too.
+One endpoint an AI agent can call to convert an amount between two currencies at
+a published ECB euro reference rate.
 
-Use Claude Code, Cursor, Copilot — whatever you normally use. That is how we work
-every day, and we would rather see you use it well than watch you avoid it. The
-only thing we ask is that you know your own code.
+It answers with the rate **and with the date that rate actually belongs to**. When
+no rate exists for the day asked about, it says so in the answer rather than
+quietly moving the date. When no rate can honestly be given, it refuses instead of
+returning a number.
 
-**Start by clicking "Use this template"** to create your own repository, then
-work there.
+## Run
 
----
-
-## Part A — build (about 90 minutes)
-
-A small HTTP service — Python + FastAPI preferred, TypeScript is fine — with one
-endpoint an AI agent could call as a tool:
-
-```
-GET /tools/convert?amount=250&from=EUR&to=TRY&date=2026-08-28
+```sh
+pip install -r requirements.txt
+./run.sh
 ```
 
-It answers using the public [Frankfurter API](https://frankfurter.dev) —
-European Central Bank rates, no API key, no signup.
-
-### Three things are fixed, so that we can run every submission the same way
-
-| | |
-|---|---|
-| Upstream URL | from the `FX_UPSTREAM_BASE` environment variable, defaulting to `https://api.frankfurter.dev`. **Nothing may hardcode the real host** — we point this at a fake upstream when reviewing. |
-| Port | from the `PORT` environment variable, default `8080` |
-| Scripts | `./run.sh` starts the service, `./test.sh` runs the tests. Both are in this template, unimplemented. |
-
-### The response
-
-On success, 200 with:
+```sh
+curl 'http://localhost:8080/tools/convert?amount=250&from=EUR&to=TRY&date=2026-08-28'
+```
 
 ```json
 {
   "amount": 250,
   "from": "EUR",
   "to": "TRY",
-  "rate": 47.1234,
-  "result": 11780.85,
+  "rate": 56.1718,
+  "result": 14042.95,
   "rate_date": "2026-08-28",
   "asked_date": "2026-08-28",
   "source": "ECB via frankfurter.dev"
 }
 ```
 
-`rate_date` is **the date the rate you used actually belongs to.** `asked_date`
-is what the caller asked for. They are not always the same, and that difference
-is the point of this task.
+The OpenAPI description a model would read is at `/openapi.json`, and `/docs`
+renders it.
 
-On failure, a non-2xx status and:
+## Test
 
-```json
-{ "error": "<short_machine_code>", "message": "<a sentence a person could read>" }
+```sh
+./test.sh
 ```
 
-List your error codes in your README.
+No test opens a socket. Every upstream response is served by an in-process
+`httpx.MockTransport`, so this passes with `FX_UPSTREAM_BASE` pointing at a closed
+port, at an unresolvable host, or with the machine offline.
 
-### The part that matters
+## Configuration
 
-The caller is a language model talking to a paying customer, so **a wrong number
-is worse than no number.** Decide — and implement — what happens when:
+| Variable | Default | |
+|---|---|---|
+| `FX_UPSTREAM_BASE` | `https://api.frankfurter.dev` | Base URL of the rate feed. The service appends `/v1`. This default is the only place the real host appears in the application code; a test walks `app/` and fails if any other module names it. |
+| `PORT` | `8080` | Read by `run.sh`. |
 
-- the ECB published no rate for the date asked (weekends, holidays);
-- the date is in the future, or before the series starts;
-- the currency code does not exist, or `from` and `to` are the same;
-- the upstream is slow, returns 500, or returns something that is not JSON;
-- `amount` is missing, zero, negative, or has ten decimal places.
+An invalid `FX_UPSTREAM_BASE` fails the process at startup rather than at the
+first request, so it never reads as an upstream outage.
 
-Your endpoint must never invent a rate, and must never present a rate as
-belonging to a date it does not belong to. Note that the upstream itself tells
-you which date its rates are from — read it. If you choose to answer with an
-earlier published rate, the response has to make that visible, because the model
-has to be able to tell the customer which day the number is from.
+## The `note` field
 
-### Also required
+`rate_date` and `asked_date` are always both present, and the difference between
+them is the answer to "which day is this number from". When they differ, one extra
+field appears:
 
-- **Tests that pass with no network at all** — fake the upstream. We run
-  `./test.sh` with `FX_UPSTREAM_BASE` pointing at a closed port.
-- A README of your own we can follow in under a minute: how to run it, how to
-  run the tests, your error codes, and what your endpoint does in each of the
-  cases above.
-- A repeat of the same question should not re-ask the upstream.
-- `NOTES.md`, one page. The skeleton is in this repo.
+```json
+"note": "The ECB published no rate for 2026-08-30. This is the rate published on 2026-08-28, 2 days earlier."
+```
 
-### Not required, not scored
+It is there because the caller is a model that has to tell a customer which day
+the number is from, and a sentence is easier to relay than a date subtraction. It
+is absent when the rate belongs to the day asked about.
 
-Auth, a database, a UI, a Dockerfile, CI, deployment, more endpoints. Adding them
-will not help you; a smaller thing done carefully will.
+## What it does in each case
 
----
+| The caller asks | What happens | Answer |
+|---|---|---|
+| A weekend or a holiday | The most recent earlier publication is returned, `rate_date` shows its real date, and `note` says so | `200` |
+| A day whose nearest earlier rate is more than 7 days old | Refused; a gap that wide is a feed that has stopped, not a holiday | `404 rate_too_stale` |
+| Today, before the ECB has published | Yesterday's rate, with `rate_date` and `note` making that visible | `200` |
+| A date in the future | Refused without asking the feed | `400 date_in_future` |
+| A date before `1999-01-04` | Refused without asking the feed | `400 date_before_series` |
+| A pair whose history does not reach that far back, such as EUR/BRL in 1999 | Refused; the codes are real, the rate is not | `404 rate_unavailable` |
+| A code that is not three letters | Refused | `400 unknown_currency` |
+| Three letters the ECB does not price, such as `XAU` | Refused, and told which codes do exist | `400 unknown_currency` |
+| `from` and `to` are the same | Refused, and told that the conversion is 1:1 | `400 same_currency` |
+| The feed is slow | Refused after the read budget, 4s | `504 upstream_timeout` |
+| The feed cannot be reached | Refused after the connect budget, 2s | `503 upstream_unavailable` |
+| The feed returns 500 | Refused | `502 upstream_error` |
+| The feed returns something that is not JSON, or JSON without the rate asked for, or a rate of zero | Refused | `502 upstream_bad_response` |
+| `amount` is missing | Refused | `400 missing_parameter` |
+| `amount` is zero, negative, `nan`, `inf`, unparseable, or above 10<sup>12</sup> | Refused | `400 invalid_amount` |
+| `amount` has ten decimal places | Accepted. The rate is applied at full precision and the result is rounded to the cent, half away from zero. An amount too small to reach a cent answers `0.00` with the real rate shown | `200` |
+| A path or method this service does not serve | Refused in the same contract, not the framework's | `404` / `405 unsupported_request` |
 
-## Part B — review (about 45 minutes)
+Any repeat of the same question is answered from a per-process cache rather than
+re-asked. The key includes the date, so a question about one day never answers a
+question about another. A rate for a day that is over is held for a day; anything
+that could still be republished is held for ten minutes, because the ECB publishes
+around 16:00 CET.
 
-`tool.py` in this repository is a working version of the same service, written
-quickly with an AI assistant. It runs. **Review it as if it were going live
-tomorrow for a customer who pays us.**
+## Errors
 
-Fill in `REVIEW.md`, one page:
+Every failure, without exception, leaves as:
 
-- what is wrong, and what it does to a **customer** — not to a linter;
-- how you would verify each finding;
-- your findings **ranked**, and which single one you would fix before shipping
-  tonight.
+```json
+{ "error": "<machine code>", "message": "<a sentence a person could read>" }
+```
 
-Fewer findings, ranked and explained, beat a long list. If something looks
-suspicious but is actually fine, saying so is worth as much as finding a real
-defect.
+| Code | Status | Meaning |
+|---|---|---|
+| `missing_parameter` | 400 | A required query parameter was not sent. |
+| `invalid_amount` | 400 | `amount` was sent but is not a usable amount. |
+| `unknown_currency` | 400 | A currency code is malformed, or is not one the ECB prices. |
+| `same_currency` | 400 | `from` and `to` are the same currency. |
+| `invalid_date` | 400 | `date` is not an ISO calendar date. |
+| `date_in_future` | 400 | `date` has not happened yet on the publisher's calendar. |
+| `date_before_series` | 400 | `date` precedes 1999-01-04, where the series begins. |
+| `rate_unavailable` | 404 | Valid request, but the feed has no rate for that pair on that date. |
+| `rate_too_stale` | 404 | The nearest earlier rate is more than 7 days older than the date asked about. |
+| `unsupported_request` | 404 / 405 | This service does not serve that path or method. |
+| `upstream_error` | 502 | The feed answered with an unexpected status. |
+| `upstream_bad_response` | 502 | The feed answered in a shape that cannot be trusted. |
+| `upstream_unavailable` | 503 | The feed could not be reached. |
+| `upstream_timeout` | 504 | The feed did not answer in time. |
+| `internal_error` | 500 | This service failed in a way it did not anticipate. |
 
----
+`missing_parameter` is separate from `invalid_amount` and `unknown_currency`
+because "you left this out" and "what you sent is not usable" call for different
+fixes, and the caller is a model that has to pick one.
 
-## Submitting
+## Layout
 
-Reply to our email with a link to your repository. Commit in small steps — the
-history is part of what we read. Five days is plenty; if you need more, just say
-so.
+```
+app/config.py     what comes from the environment, and the tuning constants
+app/errors.py     the error contract and the codes
+app/convert.py    the date policy and the arithmetic, as pure functions
+app/upstream.py   the feed client and the cache in front of it
+app/main.py       the endpoint, and the four exception handlers
+tests/            the suite, with a fake feed in tests/support.py
+tool.py           the file under review in REVIEW.md, unmodified
+```
 
-Any question about this brief, ask. An unclear requirement is our fault, not a
-test.
-
----
-
-<sub>mangolab — Mango Yazılım Teknolojileri Ltd. Şti. · [mangolab.ai/careers](https://mangolab.ai/careers)</sub>
+`NOTES.md` has the decisions behind all of this. `REVIEW.md` is the second half of
+the case.
