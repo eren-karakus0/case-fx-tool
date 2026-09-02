@@ -168,6 +168,14 @@ class Upstream:
             response = await self._client.get(
                 url, params={"base": base, "symbols": target}
             )
+        except httpx.ConnectTimeout as exc:
+            # Timing out on the connect itself is an availability problem, not a
+            # slow answer: nothing was ever established to be slow about.
+            raise FxError(
+                UPSTREAM_UNAVAILABLE,
+                "The rate source could not be reached. No rate is returned "
+                "rather than an old or guessed one; trying again may work.",
+            ) from exc
         except httpx.TimeoutException as exc:
             raise FxError(
                 UPSTREAM_TIMEOUT,

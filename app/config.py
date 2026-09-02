@@ -32,6 +32,11 @@ UPSTREAM_API_VERSION = "v1"
 #: "ECB via 127.0.0.1" would learn nothing useful.
 SOURCE_LABEL = "ECB via frankfurter.dev"
 
+#: Above this an "amount" is not a conversion anyone is asking for, and Decimal
+#: will happily carry values no consumer can render. Enforced on the query
+#: parameter itself so that it also appears in the published tool schema.
+MAX_AMOUNT = Decimal("1000000000000")
+
 _ALLOWED_SCHEMES = ("http", "https")
 
 
@@ -60,10 +65,6 @@ class Settings:
     #: How far back the service may reach for a rate when the date asked for has
     #: none. See app.convert for the measurement behind this number.
     max_fallback_days: int = 7
-
-    #: Above this an "amount" is not a conversion anyone is asking for, and
-    #: Decimal will happily carry values that no consumer can render.
-    max_amount: Decimal = Decimal("1000000000000")
 
     @property
     def upstream_root(self) -> str:

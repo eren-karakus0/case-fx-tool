@@ -11,19 +11,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.upstream import Quote, RateCache, RateQuestion
-
-
-class Clock:
-    """A monotonic clock the test drives by hand."""
-
-    def __init__(self, start: float = 1_000.0) -> None:
-        self.now = start
-
-    def __call__(self) -> float:
-        return self.now
-
-    def advance(self, seconds: float) -> None:
-        self.now += seconds
+from tests.support import Clock
 
 
 def quote(rate: str = "56.1718", on: str = "2026-08-28") -> Quote:

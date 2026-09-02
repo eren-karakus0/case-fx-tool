@@ -33,6 +33,11 @@ INVALID_DATE = ErrorCode("invalid_date", 400)
 DATE_IN_FUTURE = ErrorCode("date_in_future", 400)
 DATE_BEFORE_SERIES = ErrorCode("date_before_series", 400)
 
+#: A path or method this service does not serve. Kept here so that a mistyped
+#: URL answers in the same contract as everything else, rather than in whatever
+#: the web framework would produce on its own.
+UNSUPPORTED_REQUEST = ErrorCode("unsupported_request", 404)
+
 # --- The request is well formed, but no rate can honestly be returned. -------
 RATE_UNAVAILABLE = ErrorCode("rate_unavailable", 404)
 RATE_TOO_STALE = ErrorCode("rate_too_stale", 404)
@@ -80,8 +85,8 @@ _FIELD_CODES: dict[str, ErrorCode] = {
 _MESSAGES: dict[str, dict[str, str]] = {
     "amount": {
         "missing": (
-            "The 'amount' query parameter is required: how much you want to "
-            "convert. Example: ?amount=250&from=EUR&to=TRY"
+            "The 'amount' query parameter is required. It says how much to "
+            "convert, for example amount=250."
         ),
         "decimal_parsing": (
             "'amount' must be a decimal number, for example 250 or 250.75."
@@ -102,8 +107,8 @@ _MESSAGES: dict[str, dict[str, str]] = {
     },
     "from": {
         "missing": (
-            "The 'from' query parameter is required: the currency you are "
-            "converting out of. Example: from=EUR"
+            "The 'from' query parameter is required. It is the currency to "
+            "convert out of, for example from=EUR."
         ),
         "*": (
             "'from' must be a three-letter ISO 4217 currency code, for example "
@@ -112,8 +117,8 @@ _MESSAGES: dict[str, dict[str, str]] = {
     },
     "to": {
         "missing": (
-            "The 'to' query parameter is required: the currency you are "
-            "converting into. Example: to=TRY"
+            "The 'to' query parameter is required. It is the currency to "
+            "convert into, for example to=TRY."
         ),
         "*": (
             "'to' must be a three-letter ISO 4217 currency code, for example TRY."
