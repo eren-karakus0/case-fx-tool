@@ -52,7 +52,8 @@ class Settings:
     upstream_base: str
 
     #: Split so a dead host fails fast while a slow but live one is given room.
-    #: Worst case for a single upstream call is connect + read.
+    #: The read budget applies per read rather than to the whole body, which is
+    #: fine for a feed whose answers arrive in one packet.
     connect_timeout: float = 2.0
     read_timeout: float = 4.0
 
@@ -62,8 +63,11 @@ class Settings:
     historical_ttl_seconds: float = 86_400.0
     cache_max_entries: int = 512
 
-    #: How far back the service may reach for a rate when the date asked for has
-    #: none. See app.convert for the measurement behind this number.
+    #: How far back the service may reach when the date asked about has no rate
+    #: of its own. Measured, not guessed: over the whole ECB series the widest
+    #: gap between two publications is five calendar days, at Easter and at
+    #: Christmas, so an honest answer never has to reach back more than four.
+    #: NOTES.md carries the numbers.
     max_fallback_days: int = 7
 
     @property

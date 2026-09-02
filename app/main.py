@@ -41,7 +41,7 @@ from app.errors import (
     FxError,
     translate_validation_error,
 )
-from app.upstream import RateCache, RateQuestion, Upstream
+from app.upstream import Quote, RateCache, RateQuestion, Upstream
 
 CONVERT_PATH = "/tools/convert"
 
@@ -165,19 +165,30 @@ async def convert(
 
     asked_on = resolve_asked_date(on, runtime.today)
     question = RateQuestion(
-        base=base,
-        target=target,
-        on=on,
-        settled=asked_on < runtime.today,
+        base=base, target=target, on=on, settled=asked_on < runtime.today
     )
 
     quote = await runtime.upstream.quote(question)
     ensure_publishable(asked_on, quote.published_on, runtime.settings.max_fallback_days)
 
+    return JSONResponse(
+        _success_body(amount=amount, question=question, quote=quote, asked_on=asked_on)
+    )
+
+
+def _success_body(
+    *, amount: Decimal, question: RateQuestion, quote: Quote, asked_on: date
+) -> dict[str, object]:
+    """Render one answer.
+
+    Keyword-only: four values of two types in a row are easy to transpose, and
+    transposing the two dates here is exactly the defect this service exists to
+    avoid.
+    """
     body: dict[str, object] = {
         "amount": _as_json_number(amount),
-        "from": base,
-        "to": target,
+        "from": question.base,
+        "to": question.target,
         "rate": _as_json_number(quote.rate),
         "result": _as_json_number(convert_amount(amount, quote.rate)),
         "rate_date": quote.published_on.isoformat(),
@@ -189,7 +200,7 @@ async def convert(
     if note is not None:
         body["note"] = note
 
-    return JSONResponse(body)
+    return body
 
 
 @app.exception_handler(FxError)

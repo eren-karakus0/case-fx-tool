@@ -33,6 +33,17 @@ from app.errors import (
 #: The path the feed uses for "whatever you published most recently".
 LATEST = "latest"
 
+#: Two different transport failures say the same thing to the caller, so they say
+#: it in the same words.
+_UNREACHABLE = (
+    "The rate source could not be reached. No rate is returned rather than an "
+    "old or guessed one; trying again may work."
+)
+_TOO_SLOW = (
+    "The rate source did not answer in time. No rate is returned rather than an "
+    "old or guessed one; trying again may work."
+)
+
 
 @dataclass(frozen=True)
 class Quote:
@@ -126,8 +137,8 @@ class Upstream:
         self._settings = settings
         self._client = client
         self._cache = cache
-        # The published currency list changes about once a decade, so once it
-        # has been read it is kept for the life of the process.
+        # The published list changes rarely enough that re-reading it inside one
+        # process would never pay for itself, so it is kept once read.
         self._currencies: frozenset[str] | None = None
 
     async def quote(self, question: RateQuestion) -> Quote:
@@ -157,58 +168,35 @@ class Upstream:
         return quote
 
     async def _get(self, path: str, base: str, target: str) -> object:
-        """Fetch and decode one feed response.
+        """Fetch one feed response and decode it.
 
         Raises:
             _NotFound: the feed has no row for this question.
             FxError: one of the UPSTREAM_* codes.
         """
         url = f"{self._settings.upstream_root}/{path}"
+        response = await self._fetch(url, {"base": base, "symbols": target})
+        return _decode(response)
+
+    async def _fetch(self, url: str, params: dict[str, str]) -> httpx.Response:
+        """Perform one request, converting transport failures at the boundary.
+
+        No other module should have to know which HTTP library is underneath, or
+        that a timeout and an unreachable host are different exception types.
+
+        Raises:
+            FxError: UPSTREAM_UNAVAILABLE or UPSTREAM_TIMEOUT.
+        """
         try:
-            response = await self._client.get(
-                url, params={"base": base, "symbols": target}
-            )
+            return await self._client.get(url, params=params)
         except httpx.ConnectTimeout as exc:
-            # Timing out on the connect itself is an availability problem, not a
-            # slow answer: nothing was ever established to be slow about.
-            raise FxError(
-                UPSTREAM_UNAVAILABLE,
-                "The rate source could not be reached. No rate is returned "
-                "rather than an old or guessed one; trying again may work.",
-            ) from exc
+            # Timing out on the connect itself is an availability problem rather
+            # than a slow answer: nothing was ever established to be slow about.
+            raise FxError(UPSTREAM_UNAVAILABLE, _UNREACHABLE) from exc
         except httpx.TimeoutException as exc:
-            raise FxError(
-                UPSTREAM_TIMEOUT,
-                "The rate source did not answer in time. No rate is returned "
-                "rather than an old or guessed one; trying again may work.",
-            ) from exc
+            raise FxError(UPSTREAM_TIMEOUT, _TOO_SLOW) from exc
         except httpx.RequestError as exc:
-            raise FxError(
-                UPSTREAM_UNAVAILABLE,
-                "The rate source could not be reached. No rate is returned "
-                "rather than an old or guessed one; trying again may work.",
-            ) from exc
-
-        if response.status_code == 404:
-            raise _NotFound()
-
-        if response.status_code != 200:
-            raise FxError(
-                UPSTREAM_ERROR,
-                f"The rate source answered with HTTP {response.status_code}, so "
-                f"no rate could be read. Trying again may work.",
-            )
-
-        try:
-            # parse_float keeps the published rate exact. The default would turn
-            # it into a binary float before any of this code ever saw it.
-            return response.json(parse_float=Decimal)
-        except ValueError as exc:
-            raise FxError(
-                UPSTREAM_BAD_RESPONSE,
-                "The rate source answered with something that is not JSON, so "
-                "no rate could be read.",
-            ) from exc
+            raise FxError(UPSTREAM_UNAVAILABLE, _UNREACHABLE) from exc
 
     async def _explain_not_found(self, question: RateQuestion) -> FxError:
         """Work out which of two things a 404 from the feed actually means.
@@ -224,25 +212,9 @@ class Upstream:
                 code for code in (question.base, question.target) if code not in known
             ]
             if unknown:
-                names = " and ".join(unknown)
-                verb = (
-                    "is not a currency" if len(unknown) == 1 else "are not currencies"
-                )
-                return FxError(
-                    UNKNOWN_CURRENCY,
-                    f"{names} {verb} the ECB publishes a euro reference rate for. "
-                    f"Known codes: {', '.join(sorted(known))}.",
-                )
+                return FxError(UNKNOWN_CURRENCY, _unknown_currency_message(unknown, known))
 
-        asked = (
-            question.on.isoformat() if question.on else "the most recent publication"
-        )
-        return FxError(
-            RATE_UNAVAILABLE,
-            f"The rate source has no {question.base}/{question.target} rate for "
-            f"{asked}. Not every currency's history reaches back to the start of "
-            f"the series.",
-        )
+        return FxError(RATE_UNAVAILABLE, _no_rate_message(question))
 
     async def _known_currencies(self) -> frozenset[str] | None:
         """The codes the feed publishes, or None if the list cannot be read.
@@ -270,6 +242,35 @@ class Upstream:
         return self._currencies
 
 
+def _decode(response: httpx.Response) -> object:
+    """Turn a feed response into JSON, or say why it cannot be.
+
+    Raises:
+        _NotFound: the feed's 404, which it uses for two different things.
+        FxError: UPSTREAM_ERROR or UPSTREAM_BAD_RESPONSE.
+    """
+    if response.status_code == 404:
+        raise _NotFound()
+
+    if response.status_code != 200:
+        raise FxError(
+            UPSTREAM_ERROR,
+            f"The rate source answered with HTTP {response.status_code}, so no "
+            f"rate could be read. Trying again may work.",
+        )
+
+    try:
+        # parse_float keeps the published rate exact. The default would turn it
+        # into a binary float before any of this code ever saw it.
+        return response.json(parse_float=Decimal)
+    except ValueError as exc:
+        raise FxError(
+            UPSTREAM_BAD_RESPONSE,
+            "The rate source answered with something that is not JSON, so no "
+            "rate could be read.",
+        ) from exc
+
+
 def read_quote(payload: object, target: str) -> Quote:
     """Turn a feed response into a Quote, or refuse it.
 
@@ -283,17 +284,35 @@ def read_quote(payload: object, target: str) -> Quote:
     if not isinstance(payload, dict):
         raise _bad_response("the body was not a JSON object")
 
+    published_on = _published_date(payload)
+    return Quote(rate=_rate_for(payload, target), published_on=published_on)
+
+
+def _published_date(payload: dict[str, object]) -> date:
+    """The date the feed says its rates belong to.
+
+    Raises:
+        FxError: UPSTREAM_BAD_RESPONSE when it is absent or is not a date.
+    """
     published = payload.get("date")
     if not isinstance(published, str):
         raise _bad_response("the body carried no publication date")
 
     try:
-        published_on = date.fromisoformat(published)
+        return date.fromisoformat(published)
     except ValueError:
         raise _bad_response(
             f"the publication date {published!r} is not a date"
         ) from None
 
+
+def _rate_for(payload: dict[str, object], target: str) -> Decimal:
+    """The published rate for one currency.
+
+    Raises:
+        FxError: UPSTREAM_BAD_RESPONSE when it is absent, unreadable, or not a
+            positive finite number.
+    """
     rates = payload.get("rates")
     if not isinstance(rates, dict) or target not in rates:
         raise _bad_response(f"the body carried no rate for {target}")
@@ -309,7 +328,25 @@ def read_quote(payload: object, target: str) -> Quote:
         # the customer's money at nothing.
         raise _bad_response(f"the rate for {target} was {rate}, which is not a rate")
 
-    return Quote(rate=rate, published_on=published_on)
+    return rate
+
+
+def _unknown_currency_message(unknown: list[str], known: frozenset[str]) -> str:
+    names = " and ".join(unknown)
+    verb = "is not a currency" if len(unknown) == 1 else "are not currencies"
+    return (
+        f"{names} {verb} the ECB publishes a euro reference rate for. "
+        f"Known codes: {', '.join(sorted(known))}."
+    )
+
+
+def _no_rate_message(question: RateQuestion) -> str:
+    asked = question.on.isoformat() if question.on else "the most recent publication"
+    return (
+        f"The rate source has no {question.base}/{question.target} rate for "
+        f"{asked}. Not every currency's history reaches back to the start of "
+        f"the series."
+    )
 
 
 def _bad_response(reason: str) -> FxError:
