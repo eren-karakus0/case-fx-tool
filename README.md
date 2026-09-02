@@ -68,43 +68,40 @@ first request, so it never reads as an upstream outage.
 
 `rate_date` and `asked_date` are always both present, and the difference between
 them is the answer to "which day is this number from". When they differ, one extra
-field appears:
+field appears, because the caller is a model that has to say that difference out
+loud to a customer and a sentence relays better than a date subtraction:
 
 ```json
 "note": "The ECB published no rate for 2026-08-30. This is the rate published on 2026-08-28, 2 days earlier."
 ```
 
-It is there because the caller is a model that has to tell a customer which day
-the number is from, and a sentence is easier to relay than a date subtraction. It
-is absent when the rate belongs to the day asked about.
-
 ## What it does in each case
 
 | The caller asks | What happens | Answer |
 |---|---|---|
-| A weekend or a holiday | The most recent earlier publication is returned, `rate_date` shows its real date, and `note` says so | `200` |
-| A day whose nearest earlier rate is more than 7 days old | Refused; a gap that wide is a feed that has stopped, not a holiday | `404 rate_too_stale` |
-| Today, before the ECB has published | Yesterday's rate, with `rate_date` and `note` making that visible | `200` |
-| A date in the future | Refused without asking the feed | `400 date_in_future` |
-| A date before `1999-01-04` | Refused without asking the feed | `400 date_before_series` |
-| A pair whose history does not reach that far back, such as EUR/BRL in 1999 | Refused; the codes are real, the rate is not | `404 rate_unavailable` |
-| A code that is not three letters | Refused | `400 unknown_currency` |
-| Three letters the ECB does not price, such as `XAU` | Refused, and told which codes do exist | `400 unknown_currency` |
-| `from` and `to` are the same | Refused, and told that the conversion is 1:1 | `400 same_currency` |
-| The feed is slow | Refused after the read budget, 4s | `504 upstream_timeout` |
-| The feed cannot be reached | Refused at once if the connection is refused, otherwise after the connect budget of 5s | `503 upstream_unavailable` |
-| The feed returns 500 | Refused | `502 upstream_error` |
-| The feed returns something that is not JSON, or JSON without the rate asked for, or a rate of zero | Refused | `502 upstream_bad_response` |
-| `amount` is missing | Refused | `400 missing_parameter` |
-| `amount` is zero, negative, `nan`, `inf`, unparseable, or above 10<sup>12</sup> | Refused | `400 invalid_amount` |
-| `amount` has ten decimal places | Accepted. The rate is applied at full precision and the result is rounded to the cent, half away from zero. An amount too small to reach a cent answers `0.00` with the real rate shown | `200` |
-| A path or method this service does not serve | Refused in the same contract, not the framework's | `404` / `405 unsupported_request` |
+| A weekend, a holiday, or today before the ECB publishes | The last earlier publication, with `rate_date` and `note` naming its day | `200` |
+| An `amount` with ten decimal places | Accepted at full precision; the result rounds to the cent, half away from zero. Below half a cent it is `0.00`, with the real rate shown | `200` |
+| A nearest earlier rate more than 7 days old | Refused; that gap is a stopped feed, not a holiday | `404 rate_too_stale` |
+| A date in the future, or before `1999-01-04` | Refused without asking the feed | `400 date_in_future` / `date_before_series` |
+| A pair whose history starts later, EUR/BRL in 1999 say | Refused; the codes are real, the rate is not | `404 rate_unavailable` |
+| A code that is not three letters, or is not one the ECB prices (`XAU`) | Refused, and told which codes exist | `400 unknown_currency` |
+| `from` and `to` the same | Refused, and told the conversion is 1:1 | `400 same_currency` |
+| `amount` missing | Refused | `400 missing_parameter` |
+| `amount` zero, negative, `nan`, `inf`, unparseable, or above 10<sup>12</sup> | Refused | `400 invalid_amount` |
+| The feed is slow, or unreachable | Refused after the 4s read or 5s connect budget; a refused connection fails at once | `504 upstream_timeout` / `503 upstream_unavailable` |
+| The feed answers 500, or with non-JSON, or without the rate asked for, or a rate of zero | Refused | `502 upstream_error` / `upstream_bad_response` |
+| A path or method not served | Refused in this contract, not the framework's | `404` / `405 unsupported_request` |
 
 Any repeat of the same question is answered from a per-process cache rather than
-re-asked. The key includes the date, so a question about one day never answers a
-question about another. A rate for a day that is over is held for a day; anything
-that could still be republished is held for ten minutes, because the ECB publishes
-around 16:00 CET.
+re-asked. The key carries the date, so a question about one day never answers a
+question about another; asking for today and asking without a date are one entry,
+because they are one question. A day that is over is held for a day, anything that
+could still be republished for ten minutes, because the ECB publishes around
+16:00 CET.
+
+Every number is written into the response as the decimal it is, never through a
+binary float, so an amount comes back with the digits it was sent with and a large
+result keeps its cents.
 
 ## Errors
 
